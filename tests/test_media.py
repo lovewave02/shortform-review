@@ -43,6 +43,50 @@ class DetectorParsingTests(unittest.TestCase):
             with self.subTest(output=output), self.assertRaises(media.MediaError):
                 media._decoded_duration(output, "black")
 
+    def test_decoded_video_end_is_independent_of_ffmpeg_progress_version(self):
+        packet = "#tb 0: 1/15360\n#media_type 0: video\n0, 22528, 22528, 512, 416, 0x00000000\n"
+        for progress_end in ("1466667", "1500000"):
+            with self.subTest(progress_end=progress_end):
+                output = packet + f"frame=45\nout_time_us={progress_end}\nprogress=end\n"
+                self.assertEqual(media._decoded_duration(output, "black"), 1.5)
+
+    def test_decoded_audio_end_includes_final_samples(self):
+        output = "#tb 0: 1/8000\n#media_type 0: audio\n0, 15360, 15360, 640, 1280, 0x00000000\nout_time_us=1920000\nprogress=end\n"
+        self.assertEqual(media._decoded_duration(output, "silence"), 2)
+
+    def test_variable_frame_durations_use_packet_ends(self):
+        output = "#tb 0: 1/1000\n#media_type 0: video\n0, 0, 0, 40, 416, 0x00000000\n0, 40, 40, 100, 416, 0x00000000\n0, 140, 140, 30, 416, 0x00000000\nframe=3\nprogress=end\n"
+        self.assertEqual(media._decoded_duration(output, "black"), .17)
+
+    def test_missing_or_invalid_decoded_packet_evidence_fails_closed(self):
+        valid = "#tb 0: 1/1000\n#media_type 0: video\n0, 0, 0, 40, 416, 0x00000000\nframe=1\nprogress=end\n"
+        cases = [
+            valid.replace("#tb 0: 1/1000\n", ""),
+            valid.replace("1/1000", "1/0"),
+            valid.replace("1/1000", "0/1000"),
+            valid.replace("0, 0, 0, 40, 416", "1, 0, 0, 40, 416"),
+            valid.replace("0, 0, 0, 40, 416", "0, 0, 0, 0, 416"),
+            valid.replace("0, 0, 0, 40, 416", "0, 0, 0, 40, 0"),
+            valid.replace("video", "audio"),
+            valid.replace("progress=end", "progress=continue"),
+            valid.replace("frame=1", "frame=0"),
+        ]
+        for output in cases:
+            with self.subTest(output=output), self.assertRaises(media.MediaError):
+                media._decoded_duration(output, "black")
+
+    def test_inflated_metadata_does_not_extend_decoded_eof(self):
+        info = media.MediaInfo("avi", 100, 100, None, 0, None, "stream", None)
+        output = "#tb 0: 1/1000\n#media_type 0: video\n0, 0, 0, 1000, 416, 0x00000000\nlavfi.black_start=0\nframe=1\nout_time_us=100000000\nprogress=end\n"
+        result = subprocess.CompletedProcess([], 0, output, "")
+        with patch.object(media, "_tool", return_value="ffmpeg"), patch.object(media, "_run", return_value=result) as run:
+            spans = media.detect(Path("/synthetic/short.mp4"), "black", info, ReviewOptions(), {"ffmpeg": "test"})
+        self.assertEqual(spans, [(0.0, 1.0)])
+        argv = run.call_args.args[0]
+        self.assertEqual(argv[argv.index("-fps_mode") + 1], "passthrough")
+        self.assertEqual(argv[argv.index("-enc_time_base:v") + 1], "-1")
+        self.assertEqual(argv[-3:], ["-f", "framecrc", "-"])
+
 
 class ProbeTests(unittest.TestCase):
     def result(self, data):

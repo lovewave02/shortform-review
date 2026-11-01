@@ -8,7 +8,7 @@ This is an early tool being improved through real video-production use. It does 
 
 ## Install
 
-Requires Python 3.10+ and `ffprobe` on PATH. Optional black/silence analysis also requires `ffmpeg`. Install FFmpeg separately using your platform's package manager.
+Requires Python 3.10+ and `ffprobe` on PATH. Optional black/silence analysis also requires `ffmpeg`. Use FFmpeg 6.1 or newer and install it separately using your platform's package manager.
 
 ```sh
 git clone https://github.com/lovewave02/shortform-review.git

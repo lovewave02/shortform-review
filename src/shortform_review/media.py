@@ -154,13 +154,47 @@ def parse_silence(output: str, duration: float, minimum: float) -> list[tuple[fl
 
 
 def _decoded_duration(output: str, detector: str) -> float:
+    """Read actual decoded packet ends, not version-dependent progress times.
+
+    FFmpeg 6 progress can end at the last packet PTS, while FFmpeg 8 includes
+    its duration. framecrc provides both fields and their exact time base.
+    """
     progress = dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
+    time_base: tuple[int, int] | None = None
+    media_type: str | None = None
+    maximum_end: int | None = None
     try:
-        duration = float(progress["out_time_us"]) / 1_000_000
         frames = int(progress.get("frame", "0"))
-    except (KeyError, ValueError, OverflowError) as error:
-        raise MediaError("ffmpeg did not confirm decoded output progress.") from error
-    if progress.get("progress") != "end" or not math.isfinite(duration) or duration <= 0:
+        for line in output.splitlines():
+            if line.startswith("#tb "):
+                match = re.fullmatch(r"#tb\s+0:\s*(\d+)/(\d+)", line)
+                if match is None or time_base is not None:
+                    raise ValueError("unexpected time base")
+                time_base = int(match[1]), int(match[2])
+                if min(time_base) <= 0:
+                    raise ValueError("nonpositive time base")
+            elif line.startswith("#media_type "):
+                match = re.fullmatch(r"#media_type\s+0:\s*(video|audio)", line)
+                if match is None or media_type is not None:
+                    raise ValueError("unexpected media type")
+                media_type = match[1]
+            elif re.match(r"^\s*\d+\s*,", line):
+                fields = line.split(",")
+                if len(fields) < 6:
+                    raise ValueError("incomplete packet record")
+                stream, _dts, pts, packet_duration, size = (int(value) for value in fields[:5])
+                if stream != 0 or packet_duration <= 0 or size <= 0:
+                    raise ValueError("invalid decoded packet")
+                end = pts + packet_duration
+                maximum_end = end if maximum_end is None else max(maximum_end, end)
+        if time_base is None or maximum_end is None:
+            raise ValueError("missing decoded packets")
+        duration = maximum_end * time_base[0] / time_base[1]
+    except (ValueError, OverflowError) as error:
+        raise MediaError("ffmpeg did not confirm valid decoded packet timing.") from error
+    expected_type = "video" if detector == "black" else "audio"
+    if (progress.get("progress") != "end" or media_type != expected_type
+            or not math.isfinite(duration) or duration <= 0):
         raise MediaError("ffmpeg did not confirm a complete, nonempty decoded stream.")
     if detector == "black" and frames <= 0:
         raise MediaError("ffmpeg decoded no video frames.")
@@ -179,14 +213,17 @@ def detect(path: Path, detector: str, info: MediaInfo, options: ReviewOptions,
     if detector == "black":
         argv += ["-map", "0:v:0", "-an", "-sn", "-dn", "-vf",
                  "blackdetect=d=0:pix_th=0.1:pic_th=0.98,"
-                 "metadata=mode=print:file=-"]
+                 "metadata=mode=print:file=-", "-c:v", "wrapped_avframe",
+                 "-fps_mode", "passthrough", "-enc_time_base:v", "-1"]
     elif detector == "silence" and info.audio_duration_seconds is not None:
         argv += ["-map", "0:a:0", "-vn", "-sn", "-dn", "-af",
                  f"silencedetect=noise={options.silence_db:g}dB:d={options.min_silence_duration:g},"
-                 "ametadata=mode=print:file=-"]
+                 "ametadata=mode=print:file=-", "-c:a", "pcm_s16le"]
     else:
         raise MediaError("The requested detector has no supported input stream.")
-    argv += ["-f", "null", "-"]
+    # framecrc keeps only packet timing and a checksum, not media payloads.
+    # wrapped_avframe avoids re-encoding video; PCM exposes audio sample counts.
+    argv += ["-f", "framecrc", "-"]
     result = _run(argv, options.timeout)
     if result.returncode != 0 or result.stderr.strip():
         raise MediaError(f"ffmpeg {detector} analysis failed (exit code {result.returncode}); decoding was not verified.")
