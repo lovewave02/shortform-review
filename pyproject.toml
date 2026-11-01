@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shortform-review"
+version = "0.1.0"
+description = "Local video and SRT checks that produce a human review report."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+keywords = ["video", "subtitles", "ffmpeg", "review"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Operating System :: OS Independent",
+  "Topic :: Multimedia :: Video",
+]
+dependencies = []
+
+[project.scripts]
+shortform-review = "shortform_review.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

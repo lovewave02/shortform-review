@@ -1,0 +1,3 @@
+interface:
+  display_name: "숏폼 검토 도구 관리"
+  short_description: "영상·자막 검사 결과를 기록하고 오탐·결함을 재현해 도구를 개선"
