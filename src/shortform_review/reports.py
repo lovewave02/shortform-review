@@ -10,6 +10,13 @@ from pathlib import Path
 
 from .models import ReviewReport
 
+_CONTEXT_NOTES = {
+    "spans_cue_boundary": "Subtitle timing: spans a cue boundary (often a pause between lines).",
+    "between_cues": "Subtitle timing: inside a gap between cues.",
+    "within_cue": "Subtitle timing: a caption is shown throughout; check for a dropout.",
+    "outside_cues": "Subtitle timing: outside all positive-duration cues.",
+}
+
 _CSS = """
 :root{color-scheme:light dark;font:16px/1.55 system-ui,sans-serif;background:#f5f6f8;color:#20252e}
 body{max-width:1120px;margin:auto;padding:32px 20px}h1{margin:0 0 8px;font-size:2rem}
@@ -85,6 +92,12 @@ def _timestamp(seconds: float | None) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d}.{millis:03d}"
 
 
+def _context_note(context: str | None) -> str:
+    if context is None:
+        return ""
+    return f"<br><span class=muted>{escape(_CONTEXT_NOTES.get(context, 'Subtitle timing: ' + context))}</span>"
+
+
 def render_html(report: ReviewReport) -> str:
     """Render a self-contained report with only static, hash-authorized JavaScript."""
     data = report.to_dict()
@@ -113,7 +126,7 @@ def render_html(report: ReviewReport) -> str:
             f"<tr><th scope=row>{escape(finding.id)}</th><td>{escape(finding.severity)}</td>"
             f"<td>{_timestamp(finding.start_seconds)}<br>{_timestamp(finding.end_seconds)}</td>"
             f"<td><code>{escape(finding.rule)}</code><br>Cue: {escape(str(finding.cue)) if finding.cue is not None else '—'}</td>"
-            f"<td>{escape(finding.message)}</td><td>{jump}</td></tr>"
+            f"<td>{escape(finding.message)}{_context_note(finding.subtitle_context)}</td><td>{jump}</td></tr>"
         )
     findings = ("<div class=scroll><table><thead><tr><th>ID</th><th>Severity</th><th>Start / end</th><th>Rule / cue</th><th>Review note</th><th>Player</th></tr></thead><tbody>"
                 + "".join(rows) + "</tbody></table></div>" if rows else

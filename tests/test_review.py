@@ -56,6 +56,22 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual([f.start_seconds for f in report.findings], [1, 4, 8])
         self.assertEqual([f.id for f in report.findings], ["F0001", "F0002", "F0003"])
 
+    def test_silence_gets_subtitle_context_only_after_complete_srt_check(self):
+        good = self.srt("1\n00:00:01,000 --> 00:00:03,000\na\n\n2\n00:00:03,500 --> 00:00:05,000\nb")
+        with patch.object(media, "detect", return_value=[(2.8, 3.6), (1.2, 2.0)]):
+            report = review(self.video, good, ReviewOptions(detect=("black", "silence")))
+        by_rule = {(f.rule, f.start_seconds): f.subtitle_context for f in report.findings}
+        self.assertEqual(by_rule[("media.silence", 2.8)], "spans_cue_boundary")
+        self.assertEqual(by_rule[("media.silence", 1.2)], "within_cue")
+        self.assertIsNone(by_rule[("media.black", 2.8)])
+        self.assertEqual(len(report.findings), 4)  # context never removes a finding
+
+        with patch.object(media, "detect", return_value=[(2.8, 3.6)]):
+            for srt in (None, self.srt("1\n00:00:01,000 --> 00:00:03,000\na\n\nbroken")):
+                with self.subTest(srt=srt):
+                    report = review(self.video, srt, ReviewOptions(detect=("silence",)))
+                    self.assertTrue(all(f.subtitle_context is None for f in report.findings))
+
     def test_invalid_encoding_and_empty_srt_are_incomplete(self):
         for content in (b"\xff\xfe\x00", b"", b"malformed"):
             with self.subTest(content=content):

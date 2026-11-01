@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 import math
 from typing import Any
 
-TOOL_VERSION = "0.1.0"
-SCHEMA_VERSION = "1.0"
+TOOL_VERSION = "0.2.0"
+SCHEMA_VERSION = "1.1"
 
 
 @dataclass(frozen=True)
@@ -56,6 +56,9 @@ class Finding:
     end_seconds: float | None = None
     cue: int | None = None
     id: str = ""
+    # Silence findings only, when a complete SRT was checked: where the interval
+    # falls relative to subtitle timing. A hint for triage, never a verdict.
+    subtitle_context: str | None = None
 
 
 @dataclass
@@ -136,5 +139,6 @@ class ReviewReport:
                     "Editorial quality or factual accuracy", "All-stream integrity validation",
                 ],
                 "subtitles": "External UTF-8 or UTF-8-BOM SRT only; no subtitle text is included in the report.",
+                "subtitle_context": "Silence findings note their position relative to SRT cue timing (spans_cue_boundary, between_cues, within_cue, outside_cues) only when the SRT check executed completely. It is a triage hint; findings are never removed or downgraded.",
             },
         }

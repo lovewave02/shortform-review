@@ -41,6 +41,8 @@ The default run inspects video metadata and, when supplied, UTF-8 SRT structure 
 | Black detection | Near-black intervals lasting at least 0.5 s; change with `--min-black-duration` |
 | Silence detection | Audio below −35 dB for at least 0.5 s; change with `--silence-db` and `--min-silence-duration` |
 
+When an SRT is checked completely, each silence candidate also records `subtitle_context`: `spans_cue_boundary` (a cue starts or ends inside the interval, typical of a pause between lines), `between_cues`, `within_cue` (a caption is shown throughout; check for an audio dropout), or `outside_cues` (outside all positive-duration cues). This is a triage hint only: candidates are never removed, and the review state is unchanged. Report schema 1.1 adds this field; earlier fields are unchanged.
+
 | Exit | State | Meaning |
 | --- | --- | --- |
 | 0 | `clean` | No findings in the checks actually run |

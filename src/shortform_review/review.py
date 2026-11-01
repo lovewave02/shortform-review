@@ -6,7 +6,7 @@ import stat
 
 from . import media
 from .models import Check, Finding, ReviewOptions, ReviewReport, Source
-from .rules import subtitle_findings
+from .rules import subtitle_context, subtitle_findings
 from .srt import parse_srt
 
 MAX_SRT_BYTES = 10 * 1024 * 1024
@@ -38,6 +38,7 @@ def review(video: str | Path, subtitles: str | Path | None = None,
     if not isinstance(options, ReviewOptions):
         raise TypeError("options must be ReviewOptions")
     report = ReviewReport(options)
+    checked_cues = None  # set only when the SRT check executed completely
     paths: dict[str, Path] = {}
     for name, value in (("video", video), ("subtitles", subtitles)):
         if value is None:
@@ -78,6 +79,7 @@ def review(video: str | Path, subtitles: str | Path | None = None,
                 report.checks.append(Check("subtitles", "error", "SRT syntax and timing checked; video-boundary checks were unavailable."))
             else:
                 report.checks.append(Check("subtitles", "executed", f"Checked {len(parsed.cues)} SRT cues for syntax, order, overlap, and video bounds."))
+                checked_cues = parsed.cues
         except UnicodeDecodeError:
             report.checks.append(Check("subtitles", "error", "SRT must be UTF-8 or UTF-8 with BOM; no encoding was guessed."))
         except ValueError as error:
@@ -97,7 +99,10 @@ def review(video: str | Path, subtitles: str | Path | None = None,
                 spans = media.detect(paths["video"], detector, report.media, options, report.tool_versions)
                 for start, end in spans:
                     description = "Near-black video" if detector == "black" else "Audio below the configured silence threshold"
-                    report.findings.append(Finding("warning", f"media.{detector}", f"{description}; review whether this interval is intentional.", start, end))
+                    finding = Finding("warning", f"media.{detector}", f"{description}; review whether this interval is intentional.", start, end)
+                    if detector == "silence" and checked_cues is not None:
+                        finding.subtitle_context = subtitle_context(start, end, checked_cues)
+                    report.findings.append(finding)
                 report.checks.append(Check(detector, "executed", f"Decoded the selected {'video' if detector == 'black' else 'audio'} stream; found {len(spans)} review candidate(s)."))
             except media.MediaError as error:
                 report.checks.append(Check(detector, "error", str(error)))

@@ -1,6 +1,6 @@
 import unittest
 
-from shortform_review.rules import subtitle_findings
+from shortform_review.rules import subtitle_context, subtitle_findings
 from shortform_review.srt import parse_srt
 
 
@@ -54,6 +54,35 @@ class SRTTests(unittest.TestCase):
             result = parse_srt("1\n00:00:00,000 --> 00:00:00,100\nfirst" + separator + "2\n00:00:00,200 --> 00:00:00,300\nsecond")
             self.assertTrue(result.complete)
             self.assertEqual(len(result.cues), 2)
+
+
+class SubtitleContextTests(unittest.TestCase):
+    CUES = parse_srt("1\n00:00:01,000 --> 00:00:03,000\na\n\n2\n00:00:03,200 --> 00:00:05,000\nb\n\n"
+                     "3\n00:00:06,000 --> 00:00:08,000\nc").cues
+
+    def test_each_position_is_classified(self):
+        cases = {
+            (2.8, 3.3): "spans_cue_boundary",   # crosses end of 1 and start of 2
+            (2.5, 3.0): "spans_cue_boundary",   # boundary at the inclusive edge
+            (5.2, 5.8): "between_cues",
+            (1.5, 2.5): "within_cue",
+            (0.2, 0.8): "outside_cues",
+            (8.5, 9.0): "outside_cues",
+        }
+        for (start, end), expected in cases.items():
+            with self.subTest(start=start, end=end):
+                self.assertEqual(subtitle_context(start, end, self.CUES), expected)
+
+    def test_boundaries_survive_float_representation(self):
+        # 1.128 parses as 1.1280000000000001 and 1.118 as 1.1179999999999999.
+        cues = parse_srt("1\n00:00:00,100 --> 00:00:01,128\na\n\n2\n00:00:01,118 --> 00:00:02,000\nb").cues
+        self.assertEqual(subtitle_context(0.5, float("1.128"), cues[:1]), "spans_cue_boundary")
+        self.assertEqual(subtitle_context(float("1.118"), 1.8, cues[1:]), "spans_cue_boundary")
+
+    def test_zero_and_reversed_cues_are_ignored(self):
+        cues = parse_srt("1\n00:00:02,000 --> 00:00:02,000\nz\n\n2\n00:00:04,000 --> 00:00:03,000\nr").cues
+        self.assertEqual(subtitle_context(1.5, 4.5, cues), "outside_cues")
+        self.assertEqual(subtitle_context(1.0, 2.0, []), "outside_cues")
 
 
 if __name__ == "__main__":

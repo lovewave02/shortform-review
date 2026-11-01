@@ -26,3 +26,28 @@ def subtitle_findings(cues: list[Cue], video_duration: float | None) -> list[Fin
         if covering is None or cue.end > covering.end:
             covering = cue
     return findings
+
+
+# Absorbs float representation error only (SRT times are whole milliseconds).
+_EDGE_EPSILON = 1e-6
+
+SUBTITLE_CONTEXTS = ("spans_cue_boundary", "between_cues", "within_cue", "outside_cues")
+
+
+def subtitle_context(start: float, end: float, cues: list[Cue]) -> str:
+    """Locate an interval relative to positive-duration cues.
+
+    spans_cue_boundary: a cue start or end lies inside the interval (inclusive),
+    which is typical of a pause between spoken lines. between_cues: the interval
+    sits wholly in a gap with cues on both sides. within_cue: a caption is shown
+    for the whole interval. outside_cues: before the first or after the last
+    positive-duration cue, or no such cue exists.
+    """
+    timed = [cue for cue in cues if cue.end > cue.start]
+    if any(start - _EDGE_EPSILON <= edge <= end + _EDGE_EPSILON for cue in timed for edge in (cue.start, cue.end)):
+        return "spans_cue_boundary"
+    if any(cue.start < end and cue.end > start for cue in timed):
+        return "within_cue"
+    if any(cue.end < start for cue in timed) and any(cue.start > end for cue in timed):
+        return "between_cues"
+    return "outside_cues"

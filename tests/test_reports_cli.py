@@ -47,7 +47,7 @@ class ReportTests(unittest.TestCase):
     def test_json_and_html_written_to_new_directory(self):
         paths = write_reports(self.report(), self.root / "new")
         self.assertEqual([path.name for path in paths], ["report.json", "report.html"])
-        self.assertEqual(json.loads(paths[0].read_text())["schema_version"], "1.0")
+        self.assertEqual(json.loads(paths[0].read_text())["schema_version"], "1.1")
         self.assertIn("Coverage and limits", paths[1].read_text())
 
     def test_collision_preserves_existing_content(self):
@@ -111,6 +111,22 @@ class CLITests(unittest.TestCase):
             with self.subTest(args=args), self.assertRaises(SystemExit) as caught:
                 self.invoke(["video.mp4", "--out", str(self.root / "new"), *args])
             self.assertEqual(caught.exception.code, 2)
+
+
+
+class SubtitleContextReportTests(unittest.TestCase):
+    def test_context_is_in_json_and_escaped_html(self):
+        result = ReviewReport(ReviewOptions(detect=("silence",)))
+        result.findings.append(Finding("warning", "media.silence", "quiet", 1.0, 2.0, subtitle_context="within_cue"))
+        result.findings.append(Finding("warning", "media.silence", "quiet", 3.0, 4.0, subtitle_context="<x>"))
+        result.finalize()
+        data = result.to_dict()
+        self.assertEqual(data["findings"][0]["subtitle_context"], "within_cue")
+        self.assertIn("subtitle_context", data["scope"])
+        html = render_html(result)
+        self.assertIn("a caption is shown throughout", html)
+        self.assertIn("&lt;x&gt;", html)
+        self.assertNotIn("<x>", html)
 
 
 if __name__ == "__main__":
