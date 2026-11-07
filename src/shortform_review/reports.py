@@ -35,12 +35,34 @@ _SCRIPT = """
   const chooser = document.getElementById('local-file');
   const player = document.getElementById('player');
   const status = document.getElementById('player-status');
+  const CONTEXT = 1;
   let objectUrl = null;
   let pendingSeek = null;
+  let pendingPlay = null;
+  let windowFrom = null;
+  let stopAt = null;
+  let loop = 0;
+  let generation = 0;
+  function cancelInterval() { windowFrom = null; stopAt = null; }
+  function checkStop() {
+    if (stopAt === null || player.currentTime < stopAt) return;
+    player.pause();
+    cancelInterval();
+    status.textContent = 'Stopped at ' + player.currentTime.toFixed(3) + ' s after the context window. Press Play \u00b11 s again to repeat.';
+  }
+  // Animation frames stop precisely; timeupdate keeps stopping when a hidden tab pauses frames.
+  function watchStop(id) {
+    if (id !== loop) return;
+    checkStop();
+    if (stopAt !== null) requestAnimationFrame(() => watchStop(id));
+  }
   chooser.addEventListener('change', () => {
     if (objectUrl) URL.revokeObjectURL(objectUrl);
     objectUrl = null;
     pendingSeek = null;
+    pendingPlay = null;
+    cancelInterval();
+    generation += 1;
     const file = chooser.files[0];
     if (!file) {
       player.removeAttribute('src'); player.load();
@@ -52,13 +74,39 @@ _SCRIPT = """
     player.load();
     status.textContent = 'Selected locally: ' + file.name + '. Identity has not been verified.';
   });
+  function playInterval(start, end) {
+    if (!Number.isFinite(player.duration)) { pendingPlay = [start, end]; pendingSeek = null; return; }
+    pendingPlay = null;
+    const low = Math.min(start, end), high = Math.max(start, end);
+    if (low >= player.duration) {
+      cancelInterval();
+      status.textContent = 'This interval starts after the selected video ends (' + player.duration.toFixed(3) + ' s).';
+      return;
+    }
+    const from = Math.max(0, low - CONTEXT);
+    windowFrom = from;
+    stopAt = Math.min(player.duration, high + CONTEXT);
+    player.currentTime = from;
+    status.textContent = 'Playing ' + from.toFixed(3) + '–' + stopAt.toFixed(3) + ' s; candidate ' + low.toFixed(3) + '–' + high.toFixed(3) + ' s. Selected video identity has not been verified.';
+    player.scrollIntoView({block: 'center'});
+    const request = generation;
+    const started = player.play();
+    if (started) started.catch(() => {
+      if (request !== generation) return;
+      cancelInterval();
+      status.textContent = 'Playback did not start. Press play in the player.';
+    });
+    const id = ++loop;
+    requestAnimationFrame(() => watchStop(id));
+  }
   function seek(seconds) {
+    cancelInterval();
     if (Number.isFinite(player.duration)) {
       player.currentTime = Math.min(Math.max(0, seconds), player.duration);
       pendingSeek = null;
       status.textContent = 'Moved to ' + player.currentTime.toFixed(3) + ' s. Selected video identity has not been verified.';
       player.scrollIntoView({block: 'center'});
-    } else { pendingSeek = seconds; }
+    } else { pendingSeek = seconds; pendingPlay = null; }
   }
   document.querySelectorAll('button[data-seek]').forEach(button => {
     button.addEventListener('click', () => {
@@ -67,7 +115,23 @@ _SCRIPT = """
       if (Number.isFinite(seconds)) seek(seconds);
     });
   });
-  player.addEventListener('loadedmetadata', () => { if (pendingSeek !== null) seek(pendingSeek); });
+  document.querySelectorAll('button[data-play-start]').forEach(button => {
+    button.addEventListener('click', () => {
+      if (!objectUrl) { status.textContent = 'Choose the matching local video first.'; chooser.focus(); return; }
+      const start = Number(button.dataset.playStart), end = Number(button.dataset.playEnd);
+      if (Number.isFinite(start) && Number.isFinite(end)) playInterval(start, end);
+    });
+  });
+  // A manual pause or timeline jump ends the context window instead of fighting the reviewer.
+  player.addEventListener('pause', cancelInterval);
+  player.addEventListener('seeking', () => {
+    if (stopAt !== null && (player.currentTime < windowFrom - 0.05 || player.currentTime > stopAt)) cancelInterval();
+  });
+  player.addEventListener('timeupdate', checkStop);
+  player.addEventListener('loadedmetadata', () => {
+    if (pendingPlay !== null) playInterval(pendingPlay[0], pendingPlay[1]);
+    else if (pendingSeek !== null) seek(pendingSeek);
+  });
   player.addEventListener('error', () => { status.textContent = 'This browser could not play the selected file. Use a compatible local player.'; });
   window.addEventListener('pagehide', () => { if (objectUrl) URL.revokeObjectURL(objectUrl); });
 })();
@@ -122,6 +186,10 @@ def render_html(report: ReviewReport) -> str:
     for finding in report.findings:
         jump = (f'<button type="button" aria-label="Seek {escape(finding.id, quote=True)} at {_timestamp(finding.start_seconds)}" data-seek="{escape(str(finding.start_seconds), quote=True)}">Seek</button>'
                 if finding.start_seconds is not None else "—")
+        if finding.start_seconds is not None:
+            end = finding.end_seconds if finding.end_seconds is not None else finding.start_seconds
+            jump += (f' <button type="button" aria-label="Play {escape(finding.id, quote=True)} with one second of context"'
+                     f' data-play-start="{escape(str(finding.start_seconds), quote=True)}" data-play-end="{escape(str(end), quote=True)}">Play \u00b11 s</button>')
         rows.append(
             f"<tr><th scope=row>{escape(finding.id)}</th><td>{escape(finding.severity)}</td>"
             f"<td>{_timestamp(finding.start_seconds)}<br>{_timestamp(finding.end_seconds)}</td>"

@@ -29,7 +29,7 @@ shortform-review final.mp4 --srt captions.srt --out .local-runs/first-review
 shortform-review final.mp4 --srt captions.srt --out .local-runs/full-review --detect black,silence
 ```
 
-Each output directory must be new, and its parent must already exist. Open the generated HTML report, choose the matching local video in its player, and seek to candidate timestamps. JSON provides the same findings for scripts. Media and subtitle text are not copied into the report. Reports still contain filenames, hashes, and analysis results: keep them local unless you have reviewed their contents for sharing.
+Each output directory must be new, and its parent must already exist. Open the generated HTML report, choose the matching local video in its player, and use **Seek** to jump to a candidate or **Play ±1 s** to hear and see it with one second of context on each side; playback stops automatically after the window. A manual pause, Seek, or a timeline jump outside that window cancels the automatic stop. JSON provides the same findings for scripts. Media and subtitle text are not copied into the report. Reports still contain filenames, hashes, and analysis results: keep them local unless you have reviewed their contents for sharing.
 
 The default run inspects video metadata and, when supplied, UTF-8 SRT structure and timing. Black and silence detectors are opt-in. A run without SRT does not check subtitles. Burned-in captions are not extracted or checked. `.local-runs/` is gitignored; use a different run directory for each review.
 

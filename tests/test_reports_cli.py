@@ -44,6 +44,31 @@ class ReportTests(unittest.TestCase):
         self.assertNotIn("innerHTML", html)
         self.assertIn("Identity has not been verified", html)
 
+    def test_timed_findings_offer_context_playback_and_untimed_do_not(self):
+        report = self.report()
+        report.findings.append(Finding("warning", "media.silence", "pause", 3.018594, 3.808073))
+        report.findings.append(Finding("warning", "srt.reversed_time", "reversed", 9.5, 9.0, 4))
+        report.findings.append(Finding("error", "srt.invalid_index", "no time"))
+        report.finalize()
+        html = render_html(report)
+        self.assertIn('data-play-start="3.018594" data-play-end="3.808073"', html)
+        # Reversed cues keep their recorded order; the player orders them itself.
+        self.assertIn('data-play-start="9.5" data-play-end="9.0"', html)
+        self.assertEqual(html.count("data-play-start="), 2)
+        self.assertEqual(html.count('aria-label="Play F'), 2)
+        script = re.search(r"<script>(.*?)</script>", html, re.DOTALL)[1]
+        self.assertIn("const CONTEXT = 1;", script)
+        self.assertIn("player.pause()", script)
+
+    def test_context_playback_does_not_change_json_report(self):
+        report = self.report()
+        report.findings.append(Finding("warning", "media.silence", "pause", 1, 2))
+        report.finalize()
+        payload = report.to_dict()
+        self.assertEqual(payload["schema_version"], "1.1")
+        self.assertEqual(set(payload["findings"][0]), {
+            "severity", "rule", "message", "start_seconds", "end_seconds", "cue", "id", "subtitle_context"})
+
     def test_json_and_html_written_to_new_directory(self):
         paths = write_reports(self.report(), self.root / "new")
         self.assertEqual([path.name for path in paths], ["report.json", "report.html"])
