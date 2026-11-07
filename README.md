@@ -75,6 +75,8 @@ Reports bind inputs to SHA-256 hashes and record effective settings and check co
 3. Reproduce one tool defect with a synthetic fixture, update the responsible module, and run the relevant tests.
 4. Create a new report after the change. Compare input hashes, settings, and coverage before comparing findings.
 
+To run the review automatically after each export in your own pipeline, call `skills/shortform-review-manager/scripts/postexport_review.py <final.mp4> [--srt <srt>] --runs-root <private-dir>`. It writes a new run folder with the reports plus a sibling `<run>.summary.json`, never overwriting earlier runs, and exits 0 when the review ran completely (candidates included) or 2 when it was incomplete or could not run.
+
 The bundled [shortform-review-manager skill](skills/shortform-review-manager/SKILL.md) supports this workflow in Korean. Link that directory into your agent's skill directory to use it; do not copy production assets into this repository.
 
 ## Development
